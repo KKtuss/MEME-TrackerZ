@@ -1,13 +1,10 @@
 """
-Simplified web version of the MEME Tracker application
+MEME Tracker Web Application - Main Entry Point
 """
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 import json
-import base64
-import cv2
-import numpy as np
 import logging
 import os
 
@@ -31,6 +28,11 @@ async def read_root():
     """Serve the main web interface"""
     return HTMLResponse(content=get_html_content())
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "message": "MEME Tracker is running!"}
+
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
     """WebSocket endpoint for real-time detection"""
@@ -49,52 +51,33 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             
     except WebSocketDisconnect:
         logger.info(f"Client {client_id} disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
 
 async def process_frame(frame_data: dict, client_id: str) -> dict:
     """Process a single frame and return detection results"""
     try:
-        # Decode base64 frame
-        frame_bytes = base64.b64decode(frame_data["frame"])
-        frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
-        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+        # Simple mock detection for now
+        import time
+        current_time = time.time()
         
-        if frame is None:
-            return {"error": "Invalid frame data"}
+        # Mock expression detection based on time
+        expressions = ["smiling", "looking_center", "closeup", "eyes_closed"]
+        mock_expression = expressions[int(current_time) % len(expressions)]
         
-        # Simple face detection for demo
-        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+        # Mock face detection
+        mock_face_ratio = (current_time % 100) / 100  # 0 to 1
         
-        # Encode result frame
-        _, buffer = cv2.imencode('.jpg', frame)
-        result_frame = base64.b64encode(buffer).decode()
-        
-        if len(faces) > 0:
-            # Face detected
-            face_area = faces[0][2] * faces[0][3]
-            frame_area = frame.shape[0] * frame.shape[1]
-            face_ratio = face_area / frame_area
-            
-            expression = "closeup" if face_ratio > 0.3 else "looking_center"
-            
-            return {
-                "success": True,
-                "expression": expression,
-                "frame": result_frame,
-                "debug": {
-                    "face_size": face_ratio,
-                    "faces_detected": len(faces)
-                }
+        return {
+            "success": True,
+            "expression": mock_expression if mock_face_ratio > 0.3 else None,
+            "frame": frame_data.get("frame", ""),  # Echo back the frame
+            "debug": {
+                "face_size": mock_face_ratio,
+                "faces_detected": 1 if mock_face_ratio > 0.3 else 0,
+                "mode": "demo"
             }
-        else:
-            # No face detected
-            return {
-                "success": True,
-                "expression": None,
-                "frame": result_frame,
-                "debug": {"face_size": 0, "faces_detected": 0}
-            }
+        }
             
     except Exception as e:
         logger.error(f"Error processing frame: {e}")
@@ -108,26 +91,40 @@ def get_html_content():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MEME Tracker Web</title>
+    <title>MEME Tracker Web - Demo</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: #f0f0f0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
         }
         .container {
             max-width: 1200px;
             margin: 0 auto;
             background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #333;
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .header p {
+            color: #666;
+            margin: 10px 0 0 0;
         }
         .video-container {
             display: flex;
-            gap: 20px;
-            margin-bottom: 20px;
+            gap: 30px;
+            margin-bottom: 30px;
         }
         .video-section {
             flex: 1;
@@ -136,63 +133,104 @@ def get_html_content():
             flex: 1;
             padding: 20px;
             background: #f8f9fa;
-            border-radius: 5px;
+            border-radius: 10px;
         }
         #video {
             width: 100%;
             max-width: 640px;
-            border-radius: 5px;
+            border-radius: 10px;
+            border: 3px solid #007bff;
         }
         #canvas {
             display: none;
         }
         .status {
-            margin: 10px 0;
-            padding: 10px;
+            margin: 15px 0;
+            padding: 15px;
             background: #e9ecef;
-            border-radius: 5px;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
         }
         .expression-display {
             margin: 20px 0;
-            padding: 20px;
-            background: #007bff;
+            padding: 25px;
+            background: linear-gradient(135deg, #007bff, #0056b3);
             color: white;
-            border-radius: 5px;
+            border-radius: 10px;
             text-align: center;
-            font-size: 18px;
+            font-size: 20px;
+            font-weight: bold;
+            box-shadow: 0 5px 15px rgba(0,123,255,0.3);
         }
         .controls {
-            margin: 10px 0;
+            margin: 20px 0;
         }
         .controls button {
-            background: #28a745;
+            background: linear-gradient(135deg, #28a745, #20c997);
             color: white;
             border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
+            padding: 12px 24px;
+            border-radius: 8px;
             cursor: pointer;
-            margin: 2px;
+            margin: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
         }
         .controls button:hover {
-            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(40,167,69,0.3);
         }
         .controls button:disabled {
             background: #6c757d;
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
         .debug-info {
             margin-top: 20px;
-            padding: 15px;
+            padding: 20px;
             background: #f8f9fa;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 12px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            border: 1px solid #dee2e6;
+        }
+        .debug-info h4 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-connected { background: #28a745; }
+        .status-disconnected { background: #dc3545; }
+        .status-connecting { background: #ffc107; }
+        .demo-notice {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎭 MEME Tracker Web</h1>
+        <div class="header">
+            <h1>🎭 MEME Tracker Web</h1>
+            <p>Real-time facial expression detection powered by AI</p>
+        </div>
+        
+        <div class="demo-notice">
+            <strong>🚀 Demo Mode:</strong> This is a simplified version for deployment testing. 
+            Real face detection will be added once the basic deployment is working!
+        </div>
         
         <div class="video-container">
             <div class="video-section">
@@ -200,8 +238,11 @@ def get_html_content():
                 <canvas id="canvas"></canvas>
                 
                 <div class="status">
-                    <div id="connection-status">Connecting...</div>
-                    <div id="detection-status">Starting detection...</div>
+                    <div id="connection-status">
+                        <span class="status-indicator status-connecting"></span>
+                        Connecting...
+                    </div>
+                    <div id="detection-status">Ready to start detection</div>
                 </div>
                 
                 <div class="expression-display">
@@ -213,13 +254,13 @@ def get_html_content():
                 <h3>🎮 Controls</h3>
                 
                 <div class="controls">
-                    <button id="start-btn" onclick="startDetection()">Start Detection</button>
-                    <button id="stop-btn" onclick="stopDetection()" disabled>Stop Detection</button>
+                    <button id="start-btn" onclick="startDetection()">🚀 Start Demo</button>
+                    <button id="stop-btn" onclick="stopDetection()" disabled>⏹️ Stop Demo</button>
                 </div>
                 
                 <div class="debug-info" id="debug-info">
-                    <h4>🔍 Debug Info</h4>
-                    <div id="debug-content">Waiting for detection...</div>
+                    <h4>🔍 Debug Information</h4>
+                    <div id="debug-content">Waiting for detection to start...</div>
                 </div>
             </div>
         </div>
@@ -244,30 +285,41 @@ def get_html_content():
                     } 
                 });
                 video.srcObject = stream;
-                document.getElementById('connection-status').textContent = 'Camera connected ✅';
+                updateConnectionStatus('connected', 'Camera connected ✅');
             } catch (err) {
-                document.getElementById('connection-status').textContent = 'Camera error: ' + err.message;
+                updateConnectionStatus('disconnected', 'Camera error: ' + err.message);
                 console.error('Camera error:', err);
             }
         }
 
+        // Update connection status
+        function updateConnectionStatus(status, message) {
+            const statusElement = document.getElementById('connection-status');
+            const indicator = statusElement.querySelector('.status-indicator');
+            
+            // Remove all status classes
+            indicator.classList.remove('status-connected', 'status-disconnected', 'status-connecting');
+            
+            // Add current status class
+            indicator.classList.add('status-' + status);
+            
+            statusElement.innerHTML = `<span class="status-indicator status-${status}"></span>${message}`;
+        }
+
         // Start detection
         function startDetection() {
-            if (!stream) {
-                alert('Please allow camera access first');
-                return;
-            }
-
             isDetecting = true;
             document.getElementById('start-btn').disabled = true;
             document.getElementById('stop-btn').disabled = false;
-            document.getElementById('detection-status').textContent = 'Detection running...';
+            document.getElementById('detection-status').textContent = 'Demo running...';
 
             // Connect to WebSocket
-            ws = new WebSocket(`ws://${window.location.host}/ws/${clientId}`);
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/${clientId}`);
             
             ws.onopen = function() {
                 console.log('WebSocket connected');
+                updateConnectionStatus('connected', 'WebSocket connected ✅');
                 sendFrames();
             };
             
@@ -277,6 +329,7 @@ def get_html_content():
                     updateDisplay(data);
                 } else if (data.error) {
                     console.error('Detection error:', data.error);
+                    updateConnectionStatus('disconnected', 'Detection error: ' + data.error);
                 }
             };
             
@@ -285,7 +338,13 @@ def get_html_content():
                 isDetecting = false;
                 document.getElementById('start-btn').disabled = false;
                 document.getElementById('stop-btn').disabled = true;
-                document.getElementById('detection-status').textContent = 'Detection stopped';
+                document.getElementById('detection-status').textContent = 'Demo stopped';
+                updateConnectionStatus('disconnected', 'WebSocket disconnected');
+            };
+            
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus('disconnected', 'Connection error');
             };
         }
 
@@ -315,7 +374,7 @@ def get_html_content():
                 }));
             }
             
-            setTimeout(sendFrames, 200); // ~5 FPS for better performance
+            setTimeout(sendFrames, 1000); // 1 FPS for demo
         }
 
         // Update display with detection results
@@ -323,17 +382,20 @@ def get_html_content():
             // Update current expression
             const expressionDiv = document.getElementById('current-expression');
             if (data.expression) {
-                expressionDiv.textContent = `Current Expression: ${data.expression}`;
+                expressionDiv.textContent = `🎯 Current Expression: ${data.expression}`;
             } else {
-                expressionDiv.textContent = 'No expression detected';
+                expressionDiv.textContent = '👤 No expression detected';
             }
 
             // Update debug info
             const debugContent = document.getElementById('debug-content');
             if (data.debug) {
                 debugContent.innerHTML = `
-                    Face Size: ${(data.debug.face_size * 100).toFixed(1)}%
-                    <br>Faces Detected: ${data.debug.faces_detected}
+                    <strong>📊 Demo Stats:</strong><br>
+                    • Face Size: ${(data.debug.face_size * 100).toFixed(1)}%<br>
+                    • Faces Detected: ${data.debug.faces_detected}<br>
+                    • Mode: ${data.debug.mode}<br>
+                    • Timestamp: ${new Date().toLocaleTimeString()}
                 `;
             }
         }
@@ -349,4 +411,5 @@ def get_html_content():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
