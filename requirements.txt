@@ -1,1 +1,17 @@
+# Web Deployment Requirements
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+python-multipart>=0.0.6
+jinja2>=3.1.2
+aiofiles>=23.2.1
 
+# Computer Vision
+opencv-python>=4.8.0
+numpy>=1.24.0
+pillow>=10.0.0
+mediapipe>=0.10.0
+
+# Additional web dependencies
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
