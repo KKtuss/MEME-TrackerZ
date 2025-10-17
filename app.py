@@ -411,5 +411,10 @@ def get_html_content():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    try:
+        port = int(os.environ.get("PORT", "8000"))
+        logger.info(f"Starting MEME Tracker on port {port}")
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    except Exception as e:
+        logger.error(f"Failed to start app: {e}")
+        raise
