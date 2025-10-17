@@ -7,6 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import logging
 import os
+import base64
+import cv2
+import numpy as np
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -57,25 +60,83 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 async def process_frame(frame_data: dict, client_id: str) -> dict:
     """Process a single frame and return detection results"""
     try:
-        # Simple mock detection for now
-        import time
-        current_time = time.time()
+        # Decode base64 frame
+        frame_bytes = base64.b64decode(frame_data["frame"])
+        frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
+        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
         
-        # Mock expression detection based on time
-        expressions = ["smiling", "looking_center", "closeup", "eyes_closed"]
-        mock_expression = expressions[int(current_time) % len(expressions)]
+        if frame is None:
+            return {"error": "Invalid frame data"}
         
-        # Mock face detection
-        mock_face_ratio = (current_time % 100) / 100  # 0 to 1
+        # Initialize cascades if not already done
+        if not hasattr(process_frame, 'face_cascade'):
+            process_frame.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        if not hasattr(process_frame, 'smile_cascade'):
+            process_frame.smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
+        
+        # Convert to grayscale for face detection
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Detect faces
+        faces = process_frame.face_cascade.detectMultiScale(gray, 1.1, 4)
+        
+        # Initialize variables
+        expression = None
+        face_ratio = 0
+        faces_detected = len(faces)
+        is_smiling = False
+        
+        if len(faces) > 0:
+            # Get the largest face
+            largest_face = max(faces, key=lambda face: face[2] * face[3])
+            x, y, w, h = largest_face
+            
+            # Calculate face size ratio
+            face_area = w * h
+            frame_area = frame.shape[0] * frame.shape[1]
+            face_ratio = face_area / frame_area
+            
+            # Extract face region for smile detection
+            face_roi = gray[y:y+h, x:x+w]
+            
+            # Detect smiles in the face region
+            smiles = process_frame.smile_cascade.detectMultiScale(face_roi, 1.8, 20)
+            
+            if len(smiles) > 0:
+                is_smiling = True
+                # Draw smile rectangles
+                for (sx, sy, sw, sh) in smiles:
+                    cv2.rectangle(frame, (x+sx, y+sy), (x+sx+sw, y+sy+sh), (0, 255, 0), 2)
+            
+            # Determine expression based on face size and smile
+            if face_ratio > 0.3:
+                expression = "closeup_smiling" if is_smiling else "closeup"
+            else:
+                expression = "looking_center_smiling" if is_smiling else "looking_center"
+            
+            # Draw rectangle around face
+            color = (0, 255, 0) if is_smiling else (255, 0, 0)
+            cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
+            
+            # Add text overlay
+            cv2.putText(frame, f"Face: {face_ratio:.2f}", (x, y-10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            cv2.putText(frame, f"Smile: {is_smiling}", (x, y+h+20), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        
+        # Encode result frame
+        _, buffer = cv2.imencode('.jpg', frame)
+        result_frame = base64.b64encode(buffer).decode()
         
         return {
             "success": True,
-            "expression": mock_expression if mock_face_ratio > 0.3 else None,
-            "frame": frame_data.get("frame", ""),  # Echo back the frame
+            "expression": expression,
+            "frame": result_frame,
             "debug": {
-                "face_size": mock_face_ratio,
-                "faces_detected": 1 if mock_face_ratio > 0.3 else 0,
-                "mode": "demo"
+                "face_size": face_ratio,
+                "faces_detected": faces_detected,
+                "smiling": is_smiling,
+                "mode": "real_detection"
             }
         }
             
@@ -228,8 +289,8 @@ def get_html_content():
         </div>
         
         <div class="demo-notice">
-            <strong>🚀 Demo Mode:</strong> This is a simplified version for deployment testing. 
-            Real face detection will be added once the basic deployment is working!
+            <strong>🎯 Real Face & Smile Detection Active:</strong> This version includes OpenCV face and smile detection. 
+            Move closer to the camera for "closeup" mode, and smile for "smiling" expressions!
         </div>
         
         <div class="video-container">
@@ -254,8 +315,8 @@ def get_html_content():
                 <h3>🎮 Controls</h3>
                 
                 <div class="controls">
-                    <button id="start-btn" onclick="startDetection()">🚀 Start Demo</button>
-                    <button id="stop-btn" onclick="stopDetection()" disabled>⏹️ Stop Demo</button>
+                    <button id="start-btn" onclick="startDetection()">🚀 Start Detection</button>
+                    <button id="stop-btn" onclick="stopDetection()" disabled>⏹️ Stop Detection</button>
                 </div>
                 
                 <div class="debug-info" id="debug-info">
@@ -311,7 +372,7 @@ def get_html_content():
             isDetecting = true;
             document.getElementById('start-btn').disabled = true;
             document.getElementById('stop-btn').disabled = false;
-            document.getElementById('detection-status').textContent = 'Demo running...';
+            document.getElementById('detection-status').textContent = 'Detection running...';
 
             // Connect to WebSocket
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -338,7 +399,7 @@ def get_html_content():
                 isDetecting = false;
                 document.getElementById('start-btn').disabled = false;
                 document.getElementById('stop-btn').disabled = true;
-                document.getElementById('detection-status').textContent = 'Demo stopped';
+                document.getElementById('detection-status').textContent = 'Detection stopped';
                 updateConnectionStatus('disconnected', 'WebSocket disconnected');
             };
             
@@ -374,7 +435,7 @@ def get_html_content():
                 }));
             }
             
-            setTimeout(sendFrames, 1000); // 1 FPS for demo
+            setTimeout(sendFrames, 200); // 5 FPS for real detection
         }
 
         // Update display with detection results
@@ -391,9 +452,10 @@ def get_html_content():
             const debugContent = document.getElementById('debug-content');
             if (data.debug) {
                 debugContent.innerHTML = `
-                    <strong>📊 Demo Stats:</strong><br>
+                    <strong>📊 Detection Stats:</strong><br>
                     • Face Size: ${(data.debug.face_size * 100).toFixed(1)}%<br>
                     • Faces Detected: ${data.debug.faces_detected}<br>
+                    • Smiling: ${data.debug.smiling}<br>
                     • Mode: ${data.debug.mode}<br>
                     • Timestamp: ${new Date().toLocaleTimeString()}
                 `;
