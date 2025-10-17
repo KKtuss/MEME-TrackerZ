@@ -10,6 +10,10 @@ import os
 import base64
 import numpy as np
 
+# Setup logging first
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Try to import OpenCV, fallback to mock detection if not available
 try:
     import cv2
@@ -18,10 +22,6 @@ try:
 except ImportError as e:
     OPENCV_AVAILABLE = False
     logger.warning(f"OpenCV not available: {e}. Using mock detection.")
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 app = FastAPI(title="MEME Tracker Web", version="1.0.0")
 
